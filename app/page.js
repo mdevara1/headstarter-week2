@@ -1,83 +1,115 @@
 'use client'
-import { useState, useEffect } from "react";
-import { firestore } from "@/firebase";
+import { useState, useEffect, useRef } from "react";
+import { firestore, storage } from "@/firebase";
 import { deleteDoc, getDoc, getDocs, query, setDoc, collection, doc } from "firebase/firestore";
+import { ref, uploadString, getDownloadURL } from "firebase/storage";
+import { faCamera } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import Webcam from "react-webcam";
 
 export default function Home() {
   const [pantry, setPantry] = useState([]);
   const [itemName, setItemName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [message, setMessage] = useState('');
+  const [webcam, setWebcam] = useState(false);
+
+  const webcamRef = useRef(null);
+
+  const toggleWebcam = () => {
+    setWebcam(!webcam);
+  };
+
+  const capturePhoto = async () => {
+    const imageSrc = webcamRef.current.getScreenshot();
+    await uploadImagetoFirebase(imageSrc);
+    setWebcam(false);
+  };
+
+  const uploadImagetoFirebase = async (imageSrc) => {
+    const storageRef = ref(storage, `images/${Date.now()}.png`);
+    try {
+      await uploadString(storageRef, imageSrc, 'data_url');
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log('Image uploaded and available at', downloadURL);
+      setMessage('Image uploaded to the database :))');
+      setTimeout(() => {
+        setMessage('');
+      }, 2000);
+    } catch (error) {
+      console.error('Error uploading image: ', error);
+      setMessage('Failed to upload image :((');
+      setTimeout(() => {
+        setMessage('');
+      }, 2000);
+  }
+};
 
   const updatePantry = async () => {
-    const snapshot = query(collection(firestore, 'pantry'))
-    const docs = await getDocs(snapshot)
+    const snapshot = query(collection(firestore, 'pantry'));
+    const docs = await getDocs(snapshot);
 
-    const pantryList = []
+    const pantryList = [];
     docs.forEach(doc => {
-      pantryList.push(
-       {
+      pantryList.push({
         name: doc.id,
         ...doc.data()
-       }
-      )
+      });
     });
-    setPantry(pantryList)
-  }
+    setPantry(pantryList);
+  };
 
   const addItem = async () => {
     if (itemName.trim() === '') return;
     const docRef = doc(collection(firestore, 'pantry'), itemName);
-    const docSnap = await getDoc(docRef)
+    const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()){
-      const { quantity } = docSnap.data()
-      await setDoc(docRef, { quantity: quantity + 1 })
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
+      await setDoc(docRef, { quantity: quantity + 1 });
     } else {
-      await setDoc(docRef, { quantity: 1 })
+      await setDoc(docRef, { quantity: 1 });
     }
     setItemName('');
-    await updatePantry()
-  }
+    await updatePantry();
+  };
 
   const increaseItemQuantity = async (item) => {
     const docRef = doc(collection(firestore, 'pantry'), item);
-    const docSnap = await getDoc(docRef)
+    const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()){
-      const { quantity } = docSnap.data()
-      await setDoc(docRef, { quantity: quantity + 1 })
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
+      await setDoc(docRef, { quantity: quantity + 1 });
     }
-    await updatePantry()
-  }
+    await updatePantry();
+  };
 
   const decreaseItemQuantity = async (item) => {
     const docRef = doc(collection(firestore, 'pantry'), item);
-    const docSnap = await getDoc(docRef)
+    const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()){
-      const { quantity } = docSnap.data()
-      if(quantity === 1){
-        await deleteDoc(docRef)
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
+      if (quantity === 1) {
+        await deleteDoc(docRef);
       } else {
-        await setDoc(docRef, { quantity: quantity - 1 })
+        await setDoc(docRef, { quantity: quantity - 1 });
       }
     }
-    await updatePantry()
-  }
+    await updatePantry();
+  };
 
-  useEffect(() => { 
+  useEffect(() => {
     if (typeof window !== "undefined") {
       updatePantry();
     }
-  }, [])
+  }, []);
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
-  }
+  };
 
-  const filteredPantry = pantry.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-r from-green-400 to-blue-500 p-8">
@@ -98,11 +130,44 @@ export default function Home() {
         />
         <button
           onClick={addItem}
-          className=" p-2 bg-blue-500 text-white rounded hover:bg-blue-700"
+          className="p-2 bg-blue-500 text-white rounded hover:bg-blue-700"
         >
           Add Item
         </button>
       </div>
+
+      <div className="flex flex-col items-center">
+      <button
+          onClick={toggleWebcam}
+          className="mb-4 p-2 bg-blue-500 text-white rounded hover:bg-blue-700 flex items-center space-x-2"
+        >
+          <FontAwesomeIcon icon={faCamera} />
+          <span>{webcam ? 'Hide Webcam' : 'Capture your photos!'}</span>
+        </button>
+
+      {webcam && (
+        <div className="relative w-80 h-60 mb-4">
+          <Webcam
+            audio={false}
+            ref={webcamRef}
+            screenshotFormat="image/png"
+            className="absolute inset-0 w-full h-full object-cover border-2 border-gray-300 rounded-lg"
+          />
+          <button
+            onClick={capturePhoto}
+            className="absolute bottom-2 left-1/2 transform -translate-x-1/2 p-2 bg-blue-500 text-white rounded hover:bg-blue-700"
+          >
+            Capture Photo
+          </button>
+        </div>
+      )}
+
+        {message && (
+          <div className="mt-3 p-4 bg-white-500 text-white rounded">
+            {message}
+          </div>
+        )}
+    </div>
 
       <input
         type="text"
@@ -113,7 +178,7 @@ export default function Home() {
       />
 
       <ul className="space-y-2">
-        {filteredPantry.map((item) => (
+        {pantry.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).map((item) => (
           <li key={item.name} className="flex justify-between items-center p-4 bg-white rounded shadow">
             <div>
               <p className="text-lg font-semibold">{item.name}</p>
