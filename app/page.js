@@ -1,4 +1,4 @@
-'use client'
+'use client';
 import { useState, useEffect, useRef } from "react";
 import { firestore, storage } from "@/firebase";
 import { deleteDoc, getDoc, getDocs, query, setDoc, collection, doc } from "firebase/firestore";
@@ -6,6 +6,7 @@ import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { faCamera } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Webcam from "react-webcam";
+import { openaireq } from "./api/openai";
 
 export default function Home() {
   const [pantry, setPantry] = useState([]);
@@ -31,7 +32,7 @@ export default function Home() {
     try {
       await uploadString(storageRef, imageSrc, 'data_url');
       const downloadURL = await getDownloadURL(storageRef);
-      console.log('Image uploaded and available at', downloadURL);
+      console.log('Image uploaded');
       setMessage('Image uploaded to the database :))');
       setTimeout(() => {
         setMessage('');
@@ -46,7 +47,7 @@ export default function Home() {
 };
 
   const updatePantry = async () => {
-    const snapshot = query(collection(firestore, 'pantry'));
+    const snapshot = query(collection(firestore, 'pantery'));
     const docs = await getDocs(snapshot);
 
     const pantryList = [];
@@ -101,15 +102,27 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      updatePantry();
-    }
+    const fetchResponse = async () => {
+      try {
+        // const res = await fetch('/api/openai', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        // });
+        const res = await openaireq('');
+        if (!res.ok) throw new Error('Network response was not ok');
+        const data = await res.json();
+        console.log('OpenAI response:', data);
+      } catch (error) {
+        console.error('Error fetching OpenAI response:', error);
+      }
+    };
+  
+    fetchResponse();
   }, []);
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
   };
-
 
   return (
     <div className="min-h-screen bg-gradient-to-r from-green-400 to-blue-500 p-8">
