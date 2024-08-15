@@ -6,14 +6,21 @@ import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { faCamera } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Webcam from "react-webcam";
-import { openaireq } from "./api/openai";
+import { openaireq } from "./openai";
+import { capturePhoto } from "./capturephoto";
+import { GoogleAIFileManager } from "@google/generative-ai/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI("AIzaSyAtzQKHTK91jKDbLgv6Psilgn7shhzQHIU");
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 export default function Home() {
   const [pantry, setPantry] = useState([]);
   const [itemName, setItemName] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [webcam, setWebcam] = useState(false);
+  const [generatedContent, setGeneratedContent] = useState('');
 
   const webcamRef = useRef(null);
 
@@ -21,33 +28,9 @@ export default function Home() {
     setWebcam(!webcam);
   };
 
-  const capturePhoto = async () => {
-    const imageSrc = webcamRef.current.getScreenshot();
-    await uploadImagetoFirebase(imageSrc);
-    setWebcam(false);
-  };
-
-  const uploadImagetoFirebase = async (imageSrc) => {
-    const storageRef = ref(storage, `images/${Date.now()}.png`);
-    try {
-      await uploadString(storageRef, imageSrc, 'data_url');
-      const downloadURL = await getDownloadURL(storageRef);
-      console.log('Image uploaded');
-      setMessage('Image uploaded to the database :))');
-      setTimeout(() => {
-        setMessage('');
-      }, 2000);
-    } catch (error) {
-      console.error('Error uploading image: ', error);
-      setMessage('Failed to upload image :((');
-      setTimeout(() => {
-        setMessage('');
-      }, 2000);
-  }
-};
 
   const updatePantry = async () => {
-    const snapshot = query(collection(firestore, 'pantery'));
+    const snapshot = query(collection(firestore, 'pantry'));
     const docs = await getDocs(snapshot);
 
     const pantryList = [];
@@ -104,10 +87,6 @@ export default function Home() {
   useEffect(() => {
     const fetchResponse = async () => {
       try {
-        // const res = await fetch('/api/openai', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        // });
         const res = await openaireq('');
         if (!res.ok) throw new Error('Network response was not ok');
         const data = await res.json();
@@ -119,6 +98,44 @@ export default function Home() {
   
     fetchResponse();
   }, []);
+
+  const handleCapture = async () => {
+    if (!webcamRef.current) {
+      console.error("Webcam is not initialized");
+      return;
+    }
+
+    const imageSrc = webcamRef.current.getScreenshot();
+    const storageRef = ref(storage, `images/${Date.now()}.png`);
+    
+    try {
+      await uploadString(storageRef, imageSrc, "data_url");
+      const imageUrl = await getDownloadURL(storageRef);
+      console.log(imageUrl)
+      const text= "give me the name of the product shown in the image in one word"
+
+      const result = await model.generateContent([text, webcamRef.current.getScreenshot()]
+      );
+      const textResponse = await result.response.text();
+      setMessage(`AI Response: ${textResponse}`);
+      if (textResponse.trim() === '') return;
+    const docRef = doc(collection(firestore, 'pantry'), textResponse);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data();
+      await setDoc(docRef, { quantity: quantity + 1 });
+    } else {
+      await setDoc(docRef, { quantity: 1 });
+    }
+    setItemName('');
+    await updatePantry();
+      setWebcam(false);
+    } catch (error) {
+      console.error("Error processing image:", error);
+      setMessage('Failed to process image');
+    }
+  };
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
@@ -150,7 +167,7 @@ export default function Home() {
       </div>
 
       <div className="flex flex-col items-center">
-      <button
+        <button
           onClick={toggleWebcam}
           className="mb-4 p-2 bg-blue-500 text-white rounded hover:bg-blue-700 flex items-center space-x-2"
         >
@@ -158,29 +175,29 @@ export default function Home() {
           <span>{webcam ? 'Hide Webcam' : 'Capture your photos!'}</span>
         </button>
 
-      {webcam && (
-        <div className="relative w-80 h-60 mb-4">
-          <Webcam
-            audio={false}
-            ref={webcamRef}
-            screenshotFormat="image/png"
-            className="absolute inset-0 w-full h-full object-cover border-2 border-gray-300 rounded-lg"
-          />
-          <button
-            onClick={capturePhoto}
-            className="absolute bottom-2 left-1/2 transform -translate-x-1/2 p-2 bg-blue-500 text-white rounded hover:bg-blue-700"
-          >
-            Capture Photo
-          </button>
-        </div>
-      )}
+        {webcam && (
+          <div className="relative w-80 h-60 mb-4">
+            <Webcam
+              audio={false}
+              ref={webcamRef}
+              screenshotFormat="image/png"
+              className="absolute inset-0 w-full h-full object-cover border-2 border-gray-300 rounded-lg"
+            />
+            <button
+              onClick={handleCapture}
+              className="absolute bottom-2 left-1/2 transform -translate-x-1/2 p-2 bg-blue-500 text-white rounded hover:bg-blue-700"
+            >
+              Capture Photo
+            </button>
+          </div>
+        )}
 
         {message && (
           <div className="mt-3 p-4 bg-white-500 text-white rounded">
             {message}
           </div>
         )}
-    </div>
+      </div>
 
       <input
         type="text"
